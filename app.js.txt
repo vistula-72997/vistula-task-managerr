@@ -1,0 +1,176 @@
+let config = {};
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('config.json');
+        if (!response.ok) throw new Error('Failed to load config.json');
+        config = await response.json();
+        
+        loadTasks();
+
+        const form = document.getElementById('task-form');
+        form.addEventListener('submit', handleFormSubmit);
+    } catch (error) {
+        showStatus('Error loading configuration: ' + error.message, 'error');
+    }
+});
+
+function getApiUrl() {
+    return `${config.supabaseUrl}/rest/v1/${config.tableName}`;
+}
+
+function getHeaders() {
+    return {
+        'apikey': config.supabasePublishableKey,
+        'Authorization': `Bearer ${config.supabasePublishableKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    };
+}
+
+async function loadTasks() {
+    try {
+        const res = await fetch(`${getApiUrl()}?select=*&order=id.desc`, {
+            headers: getHeaders()
+        });
+        if (!res.ok) throw new Error('Failed to fetch tasks from Supabase');
+        const tasks = await res.json();
+        renderTasks(tasks);
+    } catch (error) {
+        showStatus(error.message, 'error');
+    }
+}
+
+function renderTasks(tasks) {
+    const listContainer = document.getElementById('task-list');
+    listContainer.innerHTML = '';
+
+    if (!tasks || tasks.length === 0) {
+        listContainer.innerHTML = '<p>No tasks found. Add one above!</p>';
+        return;
+    }
+
+    tasks.forEach(task => {
+        const item = document.createElement('div');
+        item.className = `task-item ${task.completed ? 'completed' : ''}`;
+        item.setAttribute('data-id', task.id);
+
+        item.innerHTML = `
+            <div>
+                <strong class="task-title">${escapeHtml(task.title)}</strong>
+                <span class="task-status" style="float: right; font-size: 0.9em; color: ${task.completed ? '#27ae60' : '#e67e22'}">
+                    ${task.completed ? 'Completed' : 'Pending'}
+                </span>
+            </div>
+            <div class="task-description">${escapeHtml(task.description || '')}</div>
+            <div class="task-actions">
+                <button class="toggle-task" onclick="toggleTaskStatus(${task.id}, ${!task.completed})">
+                    ${task.completed ? 'Mark Incomplete' : 'Mark Complete'}
+                </button>
+                <button class="edit-task" onclick="startEditTask(${task.id}, '${escapeQuote(task.title)}', '${escapeQuote(task.description || '')}', ${task.completed})">Edit</button>
+                <button class="delete-task" onclick="deleteTask(${task.id})">Delete</button>
+            </div>
+        `;
+        listContainer.appendChild(item);
+    });
+}
+
+async function handleFormSubmit(e) {
+    e.preventDefault();
+    const title = document.getElementById('task-title').value.trim();
+    const description = document.getElementById('task-description').value.trim();
+    const taskId = document.getElementById('task-id').value;
+
+    if (!title) {
+        showStatus('Task title is required.', 'error');
+        return;
+    }
+
+    try {
+        if (taskId) {
+            const res = await fetch(`${getApiUrl()}?id=eq.${taskId}`, {
+                method: 'PATCH',
+                headers: getHeaders(),
+                body: JSON.stringify({ title, description })
+            });
+            if (!res.ok) throw new Error('Failed to update task');
+            showStatus('Task updated successfully!', 'success');
+        } else {
+            const res = await fetch(getApiUrl(), {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ title, description, completed: false })
+            });
+            if (!res.ok) throw new Error('Failed to create task');
+            showStatus('Task created successfully!', 'success');
+        }
+
+        resetForm();
+        loadTasks();
+    } catch (error) {
+        showStatus(error.message, 'error');
+    }
+}
+
+async function toggleTaskStatus(id, newStatus) {
+    try {
+        const res = await fetch(`${getApiUrl()}?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: getHeaders(),
+            body: JSON.stringify({ completed: newStatus })
+        });
+        if (!res.ok) throw new Error('Failed to update task status');
+        loadTasks();
+    } catch (error) {
+        showStatus(error.message, 'error');
+    }
+}
+
+function startEditTask(id, title, description, completed) {
+    document.getElementById('task-id').value = id;
+    document.getElementById('task-title').value = title;
+    document.getElementById('task-description').value = description;
+    document.getElementById('task-submit').textContent = 'Update Task';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function deleteTask(id) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    try {
+        const res = await fetch(`${getApiUrl()}?id=eq.${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        if (!res.ok) throw new Error('Failed to delete task');
+        showStatus('Task deleted successfully.', 'success');
+        loadTasks();
+    } catch (error) {
+        showStatus(error.message, 'error');
+    }
+}
+
+function resetForm() {
+    document.getElementById('task-form').reset();
+    document.getElementById('task-id').value = '';
+    document.getElementById('task-submit').textContent = 'Save Task';
+}
+
+function showStatus(message, type) {
+    const statusEl = document.getElementById('status-message');
+    statusEl.textContent = message;
+    statusEl.className = type;
+    statusEl.style.display = 'block';
+    setTimeout(() => {
+        statusEl.style.display = 'none';
+    }, 4000);
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function escapeQuote(str) {
+    if (!str) return '';
+    return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
