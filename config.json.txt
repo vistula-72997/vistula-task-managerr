@@ -1,0 +1,8 @@
+{
+  "supabaseUrl": "https://cgjelhqfrqpvoliibtop.supabase.co",
+  "supabasePublishableKey": "sb_publishable_ZH-TdizkM8pDqUTskG_YVg_UkFclnLP",
+  "tableName": "tasks"
+}
+{
+  "contributorStudentId": "73959"
+}
